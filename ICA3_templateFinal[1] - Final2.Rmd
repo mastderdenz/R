@@ -1,0 +1,432 @@
+---
+title: "STAT0006 ICA 3"
+author: 'Student numbers: 123456789, 123456789, 123456789, 123456789'
+subtitle: Group 4
+output:
+  pdf_document: default
+  html_document: default
+header-includes:
+  - \usepackage[justification=centering]{caption}
+---
+
+  ```{r setup, include=FALSE}
+knitr::opts_chunk$set(out.height = "\\textheight",  out.width = "\\textwidth",echo = TRUE)
+library(MASS)
+suppressPackageStartupMessages(library(MASS))
+suppressPackageStartupMessages(library(lmtest))
+suppressPackageStartupMessages(library(zoo))
+
+```
+
+``` {r data, echo = FALSE}
+Profits <- read.csv("profits.csv")
+Sales <- read.csv("sales.csv")
+```
+
+## Part 1: Normal linear model
+
+### Introduction to the data
+
+We have been given a dataset of 314 randomly selected days spanning from 2018 to 2023 of information from a particular car showroom and have been given the task to determine factors that affect the showroom's daily profits. There are no missing values in this dataset, and no evidently unreasonable values (there are two days where the car showroom makes negative profit, i.e., a loss which we have been told is possible). 
+
+The average level of profit is £2798.80 across the sample; the maximum level of profit made was £13632.80 and the minimum, or loss in this case, was -£118.30. We have been provided with 7 additional covariates that could be used to model daily profit at the car showroom. These covariates include internal factors such as: the number of staff working at the showroom that day, the amount spent by the showroom on advertising in the previous seven days, and whether any new car models were released in the previous seven days. External factors include whether it was a weekend, the average temperature at the showroom that day, whether it was raining at the showroom, and the year of the observation.
+
+First, in figure 1a we compare "profit" to the "staff" covariate, which represents the number of staff working at the showroom that day, and ranges from 1 to 5 staff. The respective mean profit for 1, 2, 3 and 4 staff is £2403.59, £2809.42, £3217.46 and £3766.33. This shows a constant increase which could suggest a positive correlation between "profit" and "staff". The single data point with 5 staff had a profit of £936.34. The largest variability in the data occurs at 3 staff, with a standard deviation of £2937.72. 
+The second plot in figure 1a shows the how "profit" is affected by the "year" of the observation. There seems to be a small fluctuation in the median profit each year.  All the median values are below the mean line for all years, indicating that there is the relationship between "profit" and "year" is right-skewed.
+
+``` {r 1box1, echo = FALSE}
+par(mfrow=c(1,2))
+
+overall_mean <- mean(Profits$profits, na.rm = TRUE)
+
+boxplot(profits ~ staff,
+        data = Profits, 
+        ylab = "Profits (£)", 
+        xlab = "No. Staff", 
+        ylim = range(Profits$profits, na.rm = TRUE))
+abline(h = overall_mean, col = "red", lwd = 2, lty = 2)
+
+boxplot(profits ~ year, 
+        data = Profits, 
+        ylab = "Profits (£)", 
+        xlab = "Year", 
+        ylim = range(Profits$profits, na.rm = TRUE))
+abline(h = overall_mean, col = "red", lwd = 2, lty = 2)
+```
+Figure 1a: Boxplots of profits depending on number of staff (left) and year (right). The red line shows the overall mean of the dataset.
+
+Below in figure 1b we are seeing how the 3 binary covariates "new_release", "weekend" and "rain" impact profit. There does not appear to be a significant relationship between "profit" and "weekend". The mean profit looks independent of "new_release". "new_release=="Y"" has 2 interesting characteristics; much smaller IQR (higher variance) and large difference between mean and median profit. We may want to explore the "rain" covariate as there is a significant difference of £`r round(abs(mean(Profits$profits[Profits$rain=="Y"])-mean(Profits$profits[Profits$rain=="N"])), 2)` in profit.
+
+``` {r 1box2, echo = FALSE}
+par(mfrow=c(1,3))
+boxplot(profits ~ new_release, 
+        data = Profits, 
+        main = "Profits vs New Release", 
+        ylab = "Profits (£)", 
+        xlab = "New Release", 
+        ylim = range(Profits$profits, na.rm = TRUE))
+
+means11 <- tapply(Profits$profits, Profits$weekend, mean, na.rm = TRUE)
+points(x = 1:length(means11), y = means11, col = c("red", "red"), pch = 19, cex = 1.5)
+
+boxplot(profits ~ weekend, 
+        data = Profits, 
+        main = "Profits vs Weekend", 
+        ylab = "Profits (£)", 
+        xlab = "Weekend", 
+        ylim = range(Profits$profits, na.rm = TRUE))
+
+means12 <- tapply(Profits$profits, Profits$weekend, mean, na.rm = TRUE)
+points(x = 1:length(means12), y = means12, col = c("red", "red"), pch = 19, cex = 1.5)
+
+boxplot(profits ~ rain, 
+        data = Profits, 
+        main = "Profits vs Rain", 
+        ylab = "Profits (£)", 
+        xlab = "Rain", 
+        ylim = range(Profits$profits, na.rm = TRUE))
+
+means13 <- tapply(Profits$profits, Profits$rain, mean, na.rm = TRUE)
+points(x = 1:length(means13), y = means13, col = c("red", "red"), pch = 19, cex = 1.5)
+```
+Figure 1b: Boxplots showing profits depending on; a new car was released that week (left), whether it was the weekend (middle) and if it was raining that day (right). The red points show the mean values for profit.
+
+Finally in figure 1c we look into the 2 continuous covariates; "advert" and "temperature". We can see a clear positive correlation between "profit" and "temperature", with most data points lying between -3°C and 5°C. The points above 10°C are much more dispersed, and there are 2 observations near 25°C, which could be outliers. There is no clear correlation between "profit" and "advert" from the plot but further tests should be carried out as there may be weaker, less visible relationship between the two covariates.
+
+``` {r 1plot, echo = FALSE}
+par(mfrow=c(1,2))
+plot(Profits$advert, Profits$profits, ylab="Profit (£)", xlab="Advertising Spend", pch = 20, col = "black", main = "Profit vs Advertising Spend")
+plot(Profits$temperature, Profits$profits, ylab="Profits (£)", xlab="Temperature (°C)", pch = 20, col = "black", main = "Profit vs Temperature")
+```
+Figure 1c: Scatterplots showing the relationship between profits vs advertising and profits vs temperature.
+
+An interesting observation about "profit" from all plots above is there are 3 days with profits above £10,000, which is significantly higher than the average £`r round(mean(Profits$profits), 2)`. These observations may need analysis when building a model as they could be considered extreme values that need adjusting.
+
+In figure 1d we plotted covariates that in the context of the data, we believe could be correlated, and form an interaction when modelling profit. There does not appear to be a relationship between "advert" and "new_release", whilst there is a significant negative correlation between "temperature" and "rain". Based on the third plot, we may also wish to explore a interaction between the "temperature" and "staff" covariates.
+
+``` {r 1interactions, echo = FALSE}
+par(mfrow=c(1,3))
+boxplot(advert ~ new_release, 
+        data = Profits, 
+        main = "Advertising Spend vs New Release", 
+        ylab = "Advertising Spend (£)", 
+        xlab = "New Release", 
+        ylim = range(Profits$advert, na.rm = TRUE))
+mean_advert <- mean(Profits$advert, na.rm = TRUE)
+abline(h= mean_advert, col = "red", lwd = 2, lty = 2)
+
+legend("topright", c("Mean"), 
+       lty = 2, lwd = 2, col = "red",
+       cex = 0.7, seg.len = 2)
+
+boxplot(temperature ~ rain, 
+        data = Profits, 
+        main = "Temperature vs Rain", 
+        ylab = "Temperature (°C)", 
+        xlab = "Rain", 
+        ylim = range(Profits$temperature, na.rm = TRUE))
+mean_temp <- mean(Profits$temperature, na.rm = TRUE)
+abline(h= mean_temp, col = "red", lwd = 2, lty = 2)
+
+legend("topright", c("Mean"), 
+       lty = 2, lwd = 2, col = "red",
+       cex = 0.7, seg.len = 2)
+
+boxplot(temperature ~ staff, 
+        data = Profits, 
+        main = "Temperature vs Staff", 
+        ylab = "Temperature (°C)", 
+        xlab = "No. Staff", 
+        ylim = range(Profits$temperature, na.rm = TRUE))
+mean_temp <- mean(Profits$temperature, na.rm = TRUE)
+abline(h= mean_temp, col = "red", lwd = 2, lty = 2)
+
+legend("topright", c("Mean"), 
+       lty = 2, lwd = 2, col = "red",
+       cex = 0.7, seg.len = 2)
+```
+Figure 1d: Boxplots comparing covariates that we believe could be correlated.
+
+In conclusion, "staff", "new_release", "rain", and "temperature" look to be the most useful covariates for building a linear model for "profit". There are other covariates however, such as "advert", that may have a hidden relationship with "profit". We will use hypothesis testing to further explore this to build a accurate model. Lastly, we have also looked at possible relationships between covariates that exclude the response variable "profit" as these could be interactions that we use in our model.
+
+### Model building
+
+The aim is to improve the model by swapping which covariates we are using. We can compare how good the models are through the Adjusted R-squared value, which represents the strength of the relationship between the model and the covariates, adjusted for the number of covariates that there are. The adjustment allows us to compare models without having to consider how many covariates they have. The algorithmic approaches to selecting covariates are a backup option, as using them makes it very likely that we ignore covariates that are useful to the model. 
+
+Initially, we build a normal linear model for profits with the other seven variables as predictors. This is referred to as Model 1 below and this is used as a base model.he aim is to find a model that has an Adjusted R-squared value greater than 0.4913 which is the value from the base model. 
+
+### Model 1
+```{r modelone, echo=FALSE}
+model1<-lm(profits~staff+advert+new_release+weekend+temperature+rain+year, data=Profits)
+summary(model1)
+#Model 1
+```
+
+To improve model 1, we made sure that categorical covariates are treated as such. We have used the "as.factor()" function on the categorical covariates "staff", "weekend" and "year" because their respective data contains integers so they will need to be classified as categorical in R using "as.factor()" function. This results in producing model 2 below which has a higher adjusted R-squared value of 0.0065 suggesting an improvement in the model from model 1. 
+
+The removal of a covariate that isn't statistically significant which occurs when their respective p-value is greater than 0.05, may improve the model. The output of model 2 that after including all seven variables in the model, the variables "weekend", "rain" and "year" may not contribute a lot to our understanding of the profits made as their respective p-values are greater than 0.05. Hence, we may consider remove these three variables as a result of the parsimony principle.
+
+### Model 2
+```{r model2, echo=FALSE}
+model2<-lm(profits~as.factor(staff)+advert+new_release+as.factor(weekend)+temperature+rain+as.factor(year), data=Profits)
+summary(model2)
+#Model 2
+```
+However, we have investigated that profits tend to be higher when temperature increases and/or when there is no rain from the "Profit vs Temperature" and "Profit vs Rain" boxplots in part 1. In addition, the median temperature when there is no rain is higher by`r round(median(Profits$temperature[Profits$rain=="N"])-median(Profits$temperature[Profits$rain=="Y"]),2)`°C than when there is rain. This resulted in us producing an interaction between the variables "temperature" and "rain" as there is a positive correlation between profits and a higher temperature when there is no rain. The output of this model is shown below as Model 3 and the adjusted R-sqaured value increases by 0.0395 from model 2. This means model 3 is an improvement as we have figured out that there probably is a relationship between temperature and rain.
+
+### Model 3
+```{r model3, echo=FALSE }
+model3<-lm(profits~as.factor(staff)+advert+new_release+as.factor(weekend)+temperature+rain+as.factor(year)+temperature*rain, data=Profits)
+summary(model3)
+#Model 3
+```
+Furthermore, we investigated another interaction between variables "advert" and "new_release" as we assumed that the spending on advertisement would increase when a new car model is release, providing a relationship between the two covariates. This resulted us in producing model 4 below.
+
+### Model 4
+```{r model4, echo=FALSE }
+model4<-lm(profits~as.factor(staff)+advert+new_release+as.factor(weekend)+temperature+rain+as.factor(year)+temperature*rain+advert*new_release, data=Profits)
+summary(model4)
+#Model 4
+```
+However, from our EDA analysis and the model 4 with the covariate "advert:new_releaseY" having a respective p-value of 0.5660, there is no relationship between spending on advertisement and new release of car models. Hence, with the R-squared value also decreasing after adding the interaction between the variables "advert" and "new_release", we have removed this interaction from the model. Therefore, we have gone back to model 3 in the model-building phase which doesn't contain the interaction between "advert" and "new_release".
+
+We have removed the variable "weekend" from model 3 because the it has a p-value of 0.89 indicating that profits are not significantly different when generated in the weekend or weekday. The output of this new model is shown below as Model 5 which has an adjusted R-squared value higher than model 3 by 0.0025. Again, improving our model.
+
+### Model 5
+```{r model5, echo=FALSE}
+model5<-lm(profits~as.factor(staff)+advert+new_release+temperature+rain+as.factor(year)+temperature*rain, data=Profits)
+summary(model5)
+#Model 5
+```
+We have removed the variable "year" from model 5 because the it has a p value- of 0.89 indicating that profits generated are not significantly different between the years 2019-2023 inclusive. The output of this new model is shown below as Model 6 which has an adjusted R-squared value higher than model 3 by 0.0021, improving our model.
+
+### Model 6
+```{r model6, echo=FALSE}
+model6<-lm(profits~as.factor(staff)+advert+new_release+temperature+rain+temperature*rain, data=Profits)
+summary(model6)
+#Model 6
+```
+Our final model above, Model 6, contains a higher R-squared value of 0.54 and a lower residual standard error than the initial model, model 1, indicating a more robust accurate model explained by these more predictive covariates. Furthermore, we retained the variable "rain" even though the p-value of 0.0546 because we believe that when there is rain, there is an impact on profits generated.
+
+### Model checking for final chosen model
+
+The final model, model 6, contains the variables "staff", "advert", "new_release", "temperature" and "rain" with an interaction between "temperature" and "rain". We will check below if the model assumptions which are linearity, normality of the error terms and homoscedasticity of the error terms are satisfied. We can assume the error terms are independent because the observations included in the dataset have been selected at random.
+
+The four plots below check the linearity of the model by plotting the standard residuals against the respective covariates. The first plot involves plotting standard residuals against "advert". There appears to be no systematic pattern in the plot and majority of the points have standard residual between the range (2,-2). This indicates that there there is a linear relationship and thus linearity is satisfied. 
+
+The second plot involves plotting standard residuals against "temperature". This plot involves transforming the values of the variables "temperature" by adding +3 because there are negative temperature values with lowest being -2.42°C and then using natural logarithms as the values ranged between -2.42°C and 25°C. We transformed the points because without this transformation, majority of the points would be clustered around the left side of the plot making it very difficult to determine if there any systematic patterns in the plot. However, with this transformation, we were able to clarify that there were no systematc patterns as the points were scattered around the horizontal red line. In addition, majority of the points have a standard residual in the range of (2,-2) which also satisfies the assumption of linearity because is is expected with the linearity assumption that 5% of the points have a standard residual outside of the range of (2,-2). 
+
+```{r Linearity - Advertisement and Temperature, echo=FALSE }
+par(mfrow=c(1,2))
+model5_stdres<-rstandard(model5)
+plot(Profits$advert, model5_stdres, ylab ="Standardised residuals", xlab = "Advert", main="Checking linearity",pch=16, cex.main=2)
+abline(a=0,b=0, col="red", lwd=2)
+plot(log(Profits$temperature+3), model5_stdres, ylab ="Standardised residuals", xlab = "Temperature(°C)", main="Checking linearity",pch=16, cex.main=2)
+abline(a=0,b=0, col="red", lwd=2)
+```
+On the other hand, we cannot assess the assumption of linearity for the third and fourth plots below as they involve categorical predictors. The third plot show standard residuals plotted against "staff". As staff is a categorical variable, there wouldn't be enough information in the plot to assess linearity and the same occurs for the fourth plot. This is because the variable "weekend" is a binary categorical variable indicating that there would be no general trend in the plot below. 
+```{r Linearity - Staff and Weekend, echo=FALSE }
+par(mfrow=c(1,2))
+model5_stdres<-rstandard(model5)
+plot(Profits$staff, model5_stdres, ylab ="Standardised residuals", xlab = "Staff", main="Checking linearity",pch=16, cex.main=2)
+abline(a=0,b=0, col="red", lwd=2)
+plot(Profits$weekend, model5_stdres, ylab ="Standardised residuals", xlab = "Weekend", main="Checking linearity",pch=16, cex.main=2)
+abline(a=0,b=0, col="red", lwd=2)
+```
+We have used the plot below to assesses the assumption of homoscedasticity of the errors for the final model, model 6 as we plot the standardised residuals against the fitted values. The plot shows that the variances of the standardised residuals appears to be smaller for small fitted values than the larger fitted values, providing evidence that the assumption of homoscedasticity may be violated as variance is not uniform.
+```{r homoscedasticity and n, echo=FALSE}
+model5_fitted<-fitted(model5)
+plot(model5_fitted, model5_stdres, xlab="Fitted values", ylab="Standardised residuals", main="Checking Homoscedasticity",pch=16, cex.main=2)
+abline(a=0, b=0, col="red", lwd=2)
+```
+The plot below assesses the assumption of normality of the errors for model 5 as we create a QQ plot. Majority of the points fall on the red reference line indicating that the data are normally distributed. In addition, there are a few values at either end of the tails which depart from the normal trend but overall normality is consistent throughout this final model, model 6.
+```{r normality and n, echo=FALSE}
+qqnorm (model5_stdres, main="Checking Normality", ylab = "Standardised Residuals", xlab = "Quantiles of N(0,1)",pch=16, cex.main=2)
+qqline (model5_stdres, col="red", lwd=2)
+```
+Overall, the assumption of linearity and normality of the error terms is satisfied. However, the assumption homoscedasticity of the error term doesn't hold.
+
+### Conclusion
+
+In our model, the primary factors influencing profit are staff numbers, current temperature, and the interaction between temperature and rainfall. The covariates 'new_release' and 'rain' individually have p values above 0.05, meaning they may not be statistically significant. Both of these covariates have very large negative coefficients, so they would be important to consider if significance is found.
+
+The coefficient for staff indicates that profit maximisation occurs with three staff members, showing diminishing returns with more workers. For temperature, its coefficient indicates a strong positive impact on profits, suggesting that higher temperatures are favourable for profit generation. Each unit increase in temperature correlates with an increase in profit by 252.102 units. Additionally, the interaction between temperature and rain indicates that this positive effect is even more pronounced with rainfall, suggesting that warm and rainy days might unexpectedly enhance profitability. To maximise profits, the business should maintain optimal staffing levels, particularly three staff members during peak periods. Additionally, encouraging business on days with warmer weather through special promotions and targeted marketing, especially for those days that are also rainy.
+
+Despite their current lack of statistical significance, the implications of 'new_release' and 'rain' due to their large negative coefficients should not be overlooked. Strategies such as refining the marketing of new cars could help mitigate the negative impacts of these factors on profit.
+
+### Discussion of limitations 
+
+The absence of staff experience data limits our model's accuracy in assessing the impact of "staff_number" on profits, potentially introducing inaccuracies.
+
+Assuming increased advertising spending before new car releases may not accurately capture the dynamics of advertising impact on profits, affecting the precision of our model due to a lag period between the "new_release" and "advert".
+
+Using a binary variable for rain lacks granularity, as it does not consider the intensity and duration of rainfall, limiting the reliability of "rain" as a covariate in our model.
+
+_Furthermore, our data ranges from 2019 to 2023 which is a short period of time._
+
+## Part 2: *Generalised linear model* OR Generalised additive model
+
+Firstly, to decide what GLM to use, we have to consider the characteristics of our response variable "sales". The "sales" covariate measures the *number* of car sales made *each day*. The minimum sales amount is `r min(Sales$sales)`. Since we have count data and we have no negative values, it may seem appropriate to use a poisson regression to build our model. 
+
+However, one condition for a poisson regression is that the mean and the variance should be approximately equal. "sales" has a mean of `r round(mean(Sales$sales), 2)` and a variance of `r round(var(Sales$sales), 2)`. Since the variance is greater than the mean, we have overdispersion. We can account for this by using either a negative binomial or quasipoisson distribution from the exponential family. Although quasipoisson allows for a simple fix for overdispersion, it does not allow for any interpretation and tests about this overdispersion. As this may be helpful in building an accurate model, we have decided to use a *negative binomial* GLM to model for "sales".
+Another characteristic to check for is zero-inflation, meaning our data has more zeros than expected by the distribution. We have `r sum(Sales$sales == 0)` days where there were zero sales.This is insignificant so we do not have to include it in our model.
+
+Below is a summary of "GLM1" which is a negative binomial GLM with all covariates present.
+
+``` {r model1, echo = FALSE, include = TRUE}
+library(MASS)
+GLM1 <- glm.nb(sales ~ as.factor(staff) + advert + new_release + as.factor(weekend) + temperature + rain + as.factor(year), data = Sales)
+summary(GLM1)
+```
+
+Using "GLM1", we can assess which which coefficients have a significant affect on our response variable. A difference here however is that we get a z-score instead of t-score. This is because we are using maximum likelihood estimation as opposed to least-squares estimation for a normal linear regression. Here we can see which coefficients are  significant (p<0.05): "(Intercept)", "as.factor(staff)2", "as.factor(staff)3", "as.factor(staff)4", "advert", "new_releaseY", "temperature". 
+
+Below is "GLM_backward" which is a stepwise regression using backward elimination to pick the most suitable covariates.
+
+``` {r backward, echo = FALSE, include = TRUE}
+GLM_backward <- step(GLM1, direction = "backward", scope = formula(GLM1), trace = 0)
+GLM_backward$coefficients
+```
+
+Now we check if these covariates are giving us useful information in our model we have compared each single covariate model to an intercept only model using an "anova()" test. 
+
+``` {r anova, echo = FALSE, include = TRUE}
+
+GLM_staff <- glm.nb(sales ~ as.factor(staff), data = Sales)
+GLM_advert <- glm.nb(sales ~ advert, data = Sales)
+GLM_new_release <- glm.nb(sales ~ new_release, data = Sales)
+GLM_temp <- glm.nb(sales ~ temperature, data = Sales)
+
+GLM_int <- glm.nb(sales ~ 1, data = Sales)
+anova(GLM_int, GLM_staff, test = "Chisq")
+anova(GLM_int, GLM_advert, test = "Chisq")
+anova(GLM_int, GLM_new_release, test = "Chisq")
+anova(GLM_int, GLM_temp, test = "Chisq")
+```
+
+As shown above, the model with "new_release" as the only covariate has a p-value of 13.1%, meaning we do not reject the null hypothesis and the model containing  the "new_release" covariate is not preferred.
+
+``` {r serial_corr, echo = FALSE}
+library(lmtest)
+
+## Checking serial correlation
+
+dw_staff <- dwtest(GLM_staff, alternative = "two.sided")
+
+dw_advert <- dwtest(GLM_advert, alternative = "two.sided")
+
+dw_temp <- dwtest(GLM_temp, alternative = "two.sided")
+
+dwstaff <- round(dw_staff[["p.value"]], 2)
+dwadvert <- round(dw_advert[["p.value"]], 2)
+dwtemp <- round(dw_temp[["p.value"]], 2)
+```
+
+The plots below are used to check for linearity, normality and homoscedacicity. We will pick our covariate based on which of these meet the assumptions the most. 
+
+Taking a look at the residuals vs covariate and residuals vs fitted values plots the points appear to be evenly distributed around the zero line with no clear shape/funneling, signifying that all three models meet the assumptions of linearity and homoscedasticity.
+
+And looking at the qqplot, "GLM_staff" performs the worst here and fails the normality assumption. Whilst "GLM_advert" and "GLM_temp" may both follow the meet normality assumption, "GLM_temp" stays much closer to the normal line at the higher quantiles.
+
+After carrying out a Durbin-Watson test for each model, the p-values for "GLM_staff", "GLM_advert" and "GLM_temp" are "r dwstaff",  "r dwadvert" and "r dwtemp" respectively. All these values are insignificant (p>0.05) therefore we do not reject the null hypothesis and we do not have to worry about serial correlation in either model.
+
+Based on the assumption of normality, we believe that temperature is the best covariate to use as "GLM_temp" best satisfies the model assumptions.
+
+``` {r plotting, echo = FALSE}
+library(lmtest)
+suppressPackageStartupMessages(library(zoo))
+
+par(mfrow=c(2,3))
+
+dev.resid_staff <- residuals(GLM_staff, type="deviance")  
+fitted.glm_staff <- fitted(GLM_staff)
+
+dev.resid_advert <- residuals(GLM_advert, type="deviance")  
+fitted.glm_advert <- fitted(GLM_advert)
+
+dev.resid_temp <- residuals(GLM_temp, type="deviance")  
+fitted.glm_temp <- fitted(GLM_temp)
+
+## Checking linearity
+plot(Sales$staff, dev.resid_staff, main = "GLM_staff",
+     xlab="No. Staff", ylab="Deviance Residuals", pch = 20)
+abline(h=0)
+
+plot(Sales$advert, dev.resid_advert, main = "GLM_advert",
+     xlab="Advertising Spend (£)", ylab = "", pch = 20)
+abline(h=0)
+
+plot(Sales$temperature, dev.resid_temp, main = "GLM_temp",
+     xlab="Temperature (°C)", ylab = "", pch = 20)
+abline(h=0)
+
+## Checking constant variance
+plot(log(fitted.glm_staff), dev.resid_staff, 
+     xlab="Fitted linear predictor values", ylab="Deviance Residuals", pch = 20)
+abline(h=0)
+
+plot(log(fitted.glm_advert), dev.resid_advert, 
+     xlab="Fitted linear predictor values", ylab="", pch = 20)
+abline(h=0)
+
+plot(log(fitted.glm_temp), dev.resid_temp, 
+     xlab="Fitted linear predictor values", ylab="", pch = 20)
+abline(h=0)
+
+## Checking normality
+qqnorm (dev.resid_staff, main="", 
+        xlab = "Quantiles of N(0,1)", ylab = "Quantiles of Deviance Residuals", pch = 20)
+qqline (dev.resid_staff)
+
+qqnorm (dev.resid_advert, main="", 
+        xlab = "Quantiles of N(0,1)", ylab = "", pch = 20)
+qqline (dev.resid_advert)
+
+qqnorm (dev.resid_temp, main="", 
+        xlab = "Quantiles of N(0,1)", ylab = "", pch = 20)
+qqline (dev.resid_temp)
+```
+
+This is also confirmed by "GLM_temp" having the closest/smallest AIC score, out of the single covariate models, with `r round(AIC(GLM_temp), 2)`, compared to `r round(AIC(GLM1),2)` for "GLM1". The lower AIC score means better model fit, but it also penalises complexity (more parameters).
+
+Additionally, we also explored building a GAM, where we built one using a tweedie distribution. This fit the data very well (temperature too), but we had two main concerns; 
+  1. The tweedie distribution provides a very flexible model, which could lead to over-fiiting and a less useful for new data.
+  2. With higher flexibility comes more complexity, and interpretation of the model becomes harder. This may be a problem for management, as less technical        people will struggle to understand the model.
+
+### Report on modelling number of car sales
+
+``` {r final_model, echo = FALSE}
+
+# Load the MASS library for negative binomial regression
+library(MASS)
+
+# I assume you have already fitted your GLM with negative binomial like this:
+# GLM_temp <- glm.nb(sales ~ temperature, data = Sales)
+
+# Plot the scatter plot of Sales against Temperature
+plot(Sales$temperature, Sales$sales, ylab = "Sales", xlab = "Temperature (°C)",
+     pch = 20, col = "black", main = "Sales vs Temperature")
+
+# Generate a sequence of temperature values for making predictions
+x_range <- seq(min(Sales$temperature), max(Sales$temperature), length.out = 300)
+
+# Create a new data frame for predictions
+newdata <- data.frame(temperature = x_range)
+
+# Predict sales using the fitted GLM model over the range of temperature values
+# Make sure to use the same variable name as in your model formula
+predictions <- predict(GLM_temp, newdata, type = "response")
+
+# Add the predicted line to the scatter plot
+lines(x_range, predictions, col = "red", lwd = 2)
+```
+
+Overall, from the model plot above, paired with the the assumptions plots; we are happy with how the model fits the data. However we can see that the two extreme values near 25°C are not accurately predicted. Provided the scarcity of observations in this temperature range the model has treated them as outliers, which could be a limiting factor when trying to predict sales with the model with temperatures above 17°C. However, we believe that between -3°C and 10°C, where most observations occurred, the model will provide an accurate estimation of the average sales for a given temperature.
+
+Finally, a concern I have for the management team is that the covariate our model uses, temperature, can only be measured and not controlled. This means our model is less helpful for decision making for maximising sales. For example, if our model took used "advert", management could find the optimal amount to spend on advertising to generate the most sales. Additionally, using a weather forecast to predict sales will be highly inaccurate, meaning this model has limited use for decision making/forecasting, eventhough it provides the best fit out of all other covariates.
+
+
+\
+\
+
+**Total word count:** insert your word count here.
